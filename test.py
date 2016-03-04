@@ -10,10 +10,11 @@ import gzip
 
 # get geo_path
 # --------------------------------------------------------------------------------
-subject_dir = "/nfs/j3/userhome/chenxiayu/workingdir/S0001"
+subjects_dir = os.environ.get("SUBJECTS_DIR", "")
+subject_id = "fsaverage"
 hemi = "lh"
 surf = "inflated"
-geo_path = os.path.join(subject_dir, "surf", "%s.%s" % (hemi, surf))
+geo_path = os.path.join(subjects_dir, subject_id, "surf", "%s.%s" % (hemi, surf))
 
 
 # 读取坐标和面片信息coords, faces
@@ -114,7 +115,7 @@ if mayavi.mlab.options.backend != 'test':
 
 # get curv_path
 # --------------------------------------------------------------------------------
-curv_path = os.path.join(subject_dir, "surf", "%s.curv" % hemi)
+curv_path = os.path.join(subjects_dir, subject_id, "surf", "%s.curv" % hemi)
 
 
 # read curvature information
@@ -172,40 +173,39 @@ if reverse:
 # add_overlay
 # --------------------------------------------------------------------------------
 # 例子中说lh.sig.nii.gz中存的是激活数据，所以我猜sig是signal的意思
-signal_path = os.path.join(subject_dir, "surf", "example_data", "lh.sig.nii.gz")
+signal_path = os.path.join("/nfs/j3/userhome/chenxiayu/workingdir/examples/example_data", "lh.sig.nii.gz")
 sign, name = "abs", "sig"
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # read_scalar_data
 try:  # try loading the nii.gz file
     scalar_data = nibabel.load(signal_path).get_data()
-	scalar_data = numpy.ravel(scalar_data, order='F')
-	
+    scalar_data = numpy.ravel(scalar_data, order='F')
 except ImageFileError:  # maybe the user give a .mgz or .mgh file
     ext = os.path.splitext(signal_path)[1]
-	if ext == ".mgz":
-	    openfile = gzip.open
-	elif ext == ".mgh":
-	    openfile = open
-	else:
-	    raise ValueError("Scalar file format must be readable by Nibabel or .mg{zh}")
-	
-	fobj = openfile(signal_path, "rb")
+    if ext == ".mgz":
+        openfile = gzip.open
+    elif ext == ".mgh":
+        openfile = open
+    else:
+        raise ValueError("Scalar file format must be readable by Nibabel or .mg{zh}")
+
+    fobj = openfile(signal_path, "rb")
     # We have to use np.fromstring here as gzip fileobjects don't work
     # with np.fromfile; same goes for try/finally instead of with statement
     try:
-        v = np.fromstring(fobj.read(4), ">i4")[0]
+        v = numpy.fromstring(fobj.read(4), ">i4")[0]
         if v != 1:
             # I don't actually know what versions this code will read, so to be
             # on the safe side, let's only let version 1 in for now.
             # Scalar data might also be in curv format (e.g. lh.thickness)
             # in which case the first item in the file is a magic number.
             raise NotImplementedError("Scalar data file version not supported")
-        ndim1 = np.fromstring(fobj.read(4), ">i4")[0]
-        ndim2 = np.fromstring(fobj.read(4), ">i4")[0]
-        ndim3 = np.fromstring(fobj.read(4), ">i4")[0]
-        nframes = np.fromstring(fobj.read(4), ">i4")[0]
-        datatype = np.fromstring(fobj.read(4), ">i4")[0]
+        ndim1 = numpy.fromstring(fobj.read(4), ">i4")[0]
+        ndim2 = numpy.fromstring(fobj.read(4), ">i4")[0]
+        ndim3 = numpy.fromstring(fobj.read(4), ">i4")[0]
+        nframes = numpy.fromstring(fobj.read(4), ">i4")[0]
+        datatype = numpy.fromstring(fobj.read(4), ">i4")[0]
         # Set the number of bytes per voxel and numpy data type according to
         # FS codes
         databytes, typecode = {0: (1, ">i1"), 1: (4, ">i4"), 3: (4, ">f4"),
@@ -215,7 +215,7 @@ except ImageFileError:  # maybe the user give a .mgz or .mgh file
         nbytes = ndim1 * ndim2 * ndim3 * nframes * databytes
         # Read in all the data, keep it in flat representation
         # (is this ever a problem?)
-        scalar_data = np.fromstring(fobj.read(nbytes), typecode)
+        scalar_data = numpy.fromstring(fobj.read(nbytes), typecode)
     finally:
         fobj.close()
 
@@ -224,7 +224,7 @@ cast = True
 if cast:
     # if the dtype.char is float and dtype.itemsize<8, then cast its dtype to float64
     if scalar_data.dtype.char == 'f' and scalar_data.dtype.itemsize < 8:
-	    scalar_data.astype(numpy.float)
+        scalar_data.astype(numpy.float)
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # _get_display_range
@@ -254,7 +254,7 @@ if sign not in ["pos", "neg", "abs"]:
 '''Encapsulation of statistical neuroimaging overlay viz data'''
 if sign in ["abs", "pos"]:
     # Figure out the correct threshold to avoid TraitErrors
-    pos_max = np.max((0.0, np.max(scalar_data)))
+    pos_max = numpy.max((0.0, numpy.max(scalar_data)))
     if pos_max < min:
         thresh_low = pos_max
     else:
@@ -265,14 +265,14 @@ else:
 
 if sign in ["abs", "neg"]:
     # Figure out the correct threshold to avoid TraitErrors
-    neg_min = np.min((0.0, np.min(scalar_data)))
+    neg_min = numpy.min((0.0, numpy.min(scalar_data)))
     if neg_min > -min:
         thresh_up = neg_min
     else:
         thresh_up = -min
-    self.neg_lims = [thresh_up, -max, -min]
+    neg_lims = [thresh_up, -max, -min]
 else:
-    self.neg_lims = None
+    neg_lims = None
 
 # Byte swap copy; due to mayavi bug
 # _prepare_data(scalar_data)
@@ -297,28 +297,28 @@ args = [x, y, z, faces]
 mesh_kwargs = dict(scalars=mlab_data, figure=figure)  # scalars=curv at the last time
 
 if pos_lims is not None:
-    pos_mesh = mlab.pipeline.triangular_mesh_source(*arg, **mesh_kwargs)
-	pos_mesh.data.point_data.normals = vtx_normals
-	pos_mesh.data.cell_data.normals = None
-	pos_thresh = mlab.pipeline.threshold(pos_mesh, low=pos_lims[0])
-	
-	pos_surf = mlab.pipeline.surface(pos_thresh, colormap="YlOrRd",
-	                                 vmin=pos_lims[1], vmax=pos_lims[2],
-									 figure=figure)
-	pos_bar = mlab.scalarbar(pos_surf, nb_labels=5)
-	pos_bar.reverse_lut = True
+    pos_mesh = mlab.pipeline.triangular_mesh_source(*args, **mesh_kwargs)
+    pos_mesh.data.point_data.normals = vtx_normals
+    pos_mesh.data.cell_data.normals = None
+    pos_thresh = mlab.pipeline.threshold(pos_mesh, low=pos_lims[0])
+
+    pos_surf = mlab.pipeline.surface(pos_thresh, colormap="YlOrRd",
+                                     vmin=pos_lims[1], vmax=pos_lims[2],
+                                     figure=figure)
+    pos_bar = mlab.scalarbar(pos_surf, nb_labels=5)
+    pos_bar.reverse_lut = True
 else:
     pos_surf = None
 
 if neg_lims is not None:
-    neg_mesh = mlab.pipeline.triangular_mesh_source(*arg, **mesh_kwargs)
-	neg_mesh.data.point_data.normals = vtx_normals
-	neg_mesh.data.cell_data.normals = None
-	neg_thresh = mlab.pipeline.threshold(neg_mesh, up=neg_lims[0])
-	
-	neg_surf = mlab.pipeline.surface(neg_thresh, colormap="PuBu",
-	                                 vmin=neg_lims[1], vmax=neg_lims[2],
-									 figure=figure)
+    neg_mesh = mlab.pipeline.triangular_mesh_source(*args, **mesh_kwargs)
+    neg_mesh.data.point_data.normals = vtx_normals
+    neg_mesh.data.cell_data.normals = None
+    neg_thresh = mlab.pipeline.threshold(neg_mesh, up=neg_lims[0])
+
+    neg_surf = mlab.pipeline.surface(neg_thresh, colormap="PuBu",
+                                     vmin=neg_lims[1], vmax=neg_lims[2],
+                                     figure=figure)
     neg_bar = mlab.scalarbar(neg_surf,  nb_labels=5)
 else:
     neg_surf = None
@@ -326,21 +326,21 @@ else:
 # _format_colorbar()
 if pos_surf is not None:
     pos_bar.scalar_bar_representation.position = (0.53, 0.01)
-	pos_bar.scalar_bar_representation.position2 = (0.42, 0.09)
+    pos_bar.scalar_bar_representation.position2 = (0.42, 0.09)
 if neg_surf is not None:
     neg_bar.scalar_bar_representation.position = (0.05, 0.01)
-	neg_bar.scalar_bar_representation.position2 = (0.42, 0.09)
+    neg_bar.scalar_bar_representation.position2 = (0.42, 0.09)
 
 # _format_cbar_text
 for cbar in ["pos_bar", "neg_bar"]:
     try:
-	    if bg_color is None or sum(bg_color) < 2:
-		    text_color = (1., 1., 1.)
-		else:
-		    text_color = (0., 0., 0.)
-		cbar.label_text_property.color = text_color
-	except AttributeError:
-	    pass
+        if bg_color is None or sum(bg_color) < 2:
+            text_color = (1., 1., 1.)
+        else:
+            text_color = (0., 0., 0.)
+        cbar.label_text_property.color = text_color
+    except AttributeError:
+        pass
 
 # _toggle_render(True, view)
 state = True
@@ -349,24 +349,21 @@ if mlab.options.backend != "test":
 
 if state is True and view is not None:
     mlab.draw(figure=figure)
-	mlab.view(*view, figure=figure)
+    mlab.view(*view, figure=figure)
 
 if state is True:
     # force render
     figure.render()
-	mlab.draw(figure=figure)
+    mlab.draw(figure=figure)
 
 # remove overlay
 # --------------------------------------------------------------------------------
 if pos_surf is not None:
     pos_surf.remove()
-	pos_bar.visible = False
+    pos_bar.visible = False
 if neg_surf is not None:
     neg_surf.remove()
-	neg_bar.visible = False
-
-
-
+    neg_bar.visible = False
 
 
 # --------------------------------------------------------------------------------
