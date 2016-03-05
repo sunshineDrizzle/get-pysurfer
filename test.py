@@ -17,10 +17,10 @@ surf = "inflated"
 geo_path = os.path.join(subjects_dir, subject_id, "surf", "%s.%s" % (hemi, surf))
 
 
-# 读取坐标和面片信息coords, faces
+# read information of coordinates and triangular patches: coords, faces
 # --------------------------------------------------------------------------------
-# coords（numpy.ndarray：154592*3，float64）每一行为一个顶点的坐标，共有154592个顶点
-# faces （numpy.ndarray：309180*3，int32）所有元素值的范围都在0和154591的闭区间内
+# coords（numpy.ndarray：163842*3，float64）每一行为一个顶点的坐标，共有163842个顶点
+# faces （numpy.ndarray：327680*3，int32）所有元素值的范围都在0和163842的闭区间内
 # faces 每一个元素就是一个顶点号，对应coords的行号，每一行表示这三个顶点组成一个三角面片
 coords, faces = nibabel.freesurfer.read_geometry(geo_path)
 
@@ -31,7 +31,7 @@ coords, faces = nibabel.freesurfer.read_geometry(geo_path)
 vtx1_s = coords[faces[:, 0], :]  # 意思是取出faces第一列所有顶点号对应的坐标
 vtx2_s = coords[faces[:, 1], :]  # 道理同上
 vtx3_s = coords[faces[:, 2], :]  # 道理同上
-# 综上所述，vtx1_s、vtx2_s、vtx3_s的规格都是（numpy.ndarray：309180*3，float64）
+# 综上所述，vtx1_s、vtx2_s、vtx3_s的规格都是（numpy.ndarray：327680*3，float64）
 # 可以知道vtx1_s、vtx2_s、vtx3_s相同行号的三个坐标表示的分别是组成三角面片的三个顶点
 
 vtx1_to_vtx2_s = vtx2_s - vtx1_s  # 对于每一行来说，就相当于是每一个面片的vtx2-vtx1产生向量vtx1_to_vtx2
@@ -50,7 +50,7 @@ zero_idx = numpy.where(sizes == 0)[0]  # 找到sizes中值为0的索引数组
 # 叉乘结果等于零表明叉乘的两个向量是平行的（这在三角面片中应该是不存在的，对于本次数据确实不存在，因此zero_idx是空的）
 sizes[zero_idx] = 1.0  # 防止0值用作除数
 tri_normals /= sizes[:, numpy.newaxis]  # numpy.newaxiss是为数组添加一个新的维度，这里使得sizes由行变成列
-#上式的计算结果是得到各个垂直向量的单位向量，即各个面片的法向量
+# 上式的计算结果是得到各个垂直向量的单位向量，即各个面片的法向量
 
 nvtxs = coords.shape[0]  # 顶点数量
 vtx_normals = numpy.zeros((nvtxs, 3))
@@ -120,7 +120,7 @@ curv_path = os.path.join(subjects_dir, subject_id, "surf", "%s.curv" % hemi)
 
 # read curvature information
 # --------------------------------------------------------------------------------
-# curv(numpy.ndarray: 1*154592, float32) 元素值为曲率，对应的索引为顶点号
+# curv(numpy.ndarray: 1*163842, float32) 元素值为曲率，对应的索引为顶点号
 curv = nibabel.freesurfer.read_morph_data(curv_path)
 bin_curv = numpy.array(curv > 0, numpy.int)
 
@@ -179,8 +179,8 @@ sign, name = "abs", "sig"
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 # read_scalar_data
 try:  # try loading the nii.gz file
-    scalar_data = nibabel.load(signal_path).get_data()
-    scalar_data = numpy.ravel(scalar_data, order='F')
+    scalar_data = nibabel.load(signal_path).get_data()  # (numpy ndarray: 163842*1*1)
+    scalar_data = numpy.ravel(scalar_data, order='F')  # (shape: (163842,)) convert to one dimension
 except ImageFileError:  # maybe the user give a .mgz or .mgh file
     ext = os.path.splitext(signal_path)[1]
     if ext == ".mgz":
@@ -201,6 +201,7 @@ except ImageFileError:  # maybe the user give a .mgz or .mgh file
             # Scalar data might also be in curv format (e.g. lh.thickness)
             # in which case the first item in the file is a magic number.
             raise NotImplementedError("Scalar data file version not supported")
+        # read the metadata from file head?
         ndim1 = numpy.fromstring(fobj.read(4), ">i4")[0]
         ndim2 = numpy.fromstring(fobj.read(4), ">i4")[0]
         ndim3 = numpy.fromstring(fobj.read(4), ">i4")[0]
@@ -222,7 +223,7 @@ except ImageFileError:  # maybe the user give a .mgz or .mgh file
 # cast=True can fix a rendering problem with certain versions of Mayavi
 cast = True
 if cast:
-    # if the dtype.char is float and dtype.itemsize<8, then cast its dtype to float64
+    # if the dtype.char is float and dtype.itemsize<8, then cast its dtype to float64?
     if scalar_data.dtype.char == 'f' and scalar_data.dtype.itemsize < 8:
         scalar_data.astype(numpy.float)
 
@@ -255,6 +256,7 @@ if sign not in ["pos", "neg", "abs"]:
 if sign in ["abs", "pos"]:
     # Figure out the correct threshold to avoid TraitErrors
     pos_max = numpy.max((0.0, numpy.max(scalar_data)))
+    # To guarantee the values among [min, max] which we want larger than the thresh_low.
     if pos_max < min:
         thresh_low = pos_max
     else:
@@ -266,6 +268,7 @@ else:
 if sign in ["abs", "neg"]:
     # Figure out the correct threshold to avoid TraitErrors
     neg_min = numpy.min((0.0, numpy.min(scalar_data)))
+    # To guarantee the values among [-max, -min] which we want smaller than the thresh_up.
     if neg_min > -min:
         thresh_up = neg_min
     else:
@@ -323,10 +326,10 @@ if neg_lims is not None:
 else:
     neg_surf = None
 
-# _format_colorbar()
+# _format_colorbar(): adjust the bar's size and position
 if pos_surf is not None:
-    pos_bar.scalar_bar_representation.position = (0.53, 0.01)
-    pos_bar.scalar_bar_representation.position2 = (0.42, 0.09)
+    pos_bar.scalar_bar_representation.position = (0.53, 0.01)  # position
+    pos_bar.scalar_bar_representation.position2 = (0.42, 0.09)  # size
 if neg_surf is not None:
     neg_bar.scalar_bar_representation.position = (0.05, 0.01)
     neg_bar.scalar_bar_representation.position2 = (0.42, 0.09)
@@ -338,7 +341,7 @@ for cbar in ["pos_bar", "neg_bar"]:
             text_color = (1., 1., 1.)
         else:
             text_color = (0., 0., 0.)
-        cbar.label_text_property.color = text_color
+        cbar.label_text_property.color = text_color  # set the labels(around the bar) color
     except AttributeError:
         pass
 
@@ -349,7 +352,7 @@ if mlab.options.backend != "test":
 
 if state is True and view is not None:
     mlab.draw(figure=figure)
-    mlab.view(*view, figure=figure)
+    # mlab.view(*view, figure=figure)  # The statement will raise some problem, so as the example!
 
 if state is True:
     # force render
