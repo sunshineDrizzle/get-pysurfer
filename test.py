@@ -183,7 +183,7 @@ try:  # try loading the nii.gz file
     scalar_data = numpy.ravel(scalar_data, order='F')  # (shape: (163842,)) convert to one dimension
 except ImageFileError:  # maybe the user give a .mgz or .mgh file
     ext = os.path.splitext(signal_path)[1]
-    if ext == ".mgz":
+    if ext == ".mgz":  # .mgh will become .mgz after compressing
         openfile = gzip.open
     elif ext == ".mgh":
         openfile = open
